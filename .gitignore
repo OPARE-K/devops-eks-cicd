@@ -1,0 +1,17 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+crash.log
+tfplan
+
+# Python / Docker
+__pycache__/
+*.pyc
+
+# Node / misc
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db

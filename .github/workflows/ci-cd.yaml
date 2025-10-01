@@ -1,0 +1,97 @@
+name: CI-CD
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PROJECT_NAME: devops-eks-cicd
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure AWS (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build & Push image (sha and latest)
+      run: |
+        IMAGE_SHA=${{ secrets.ECR_REPO }}:${{ github.sha }}
+        IMAGE_LATEST=${{ secrets.ECR_REPO }}:latest
+        docker build -t "$IMAGE_SHA" -t "$IMAGE_LATEST" ./app
+        docker push "$IMAGE_SHA"
+        docker push "$IMAGE_LATEST"
+        echo "IMAGE_SHA=$IMAGE_SHA" >> $GITHUB_ENV
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+
+    - name: Update kubeconfig for EKS
+      run: |
+        aws eks update-kubeconfig \
+          --name "${PROJECT_NAME}" \
+          --region "${{ secrets.AWS_REGION }}"
+        kubectl version --client=true
+
+    - name: Prepare namespace (idempotent)
+      run: kubectl apply -f app/k8s/namespace.yaml
+
+    - name: Ensure BLUE exists (baseline)
+      run: |
+        kubectl apply -f app/k8s/deployment-blue.yaml
+        # Don't fail if blue isn't ready yet (we deploy green next)
+        kubectl rollout status deployment/web-blue -n web --timeout=60s || true
+
+    - name: Create/Update GREEN with new SHA
+      run: |
+        kubectl apply -f app/k8s/deployment-green.yaml
+        # Pin green to immutable SHA tag just built
+        kubectl set image deployment/web-green -n web app="$IMAGE_SHA"
+        kubectl rollout status deployment/web-green -n web --timeout=180s
+
+    - name: Flip Service to GREEN (blue -> green)
+      run: |
+        kubectl patch svc web-svc -n web -p '{"spec":{"selector":{"app":"web","color":"green"}}}'
+        # Optional: scale down blue after flip
+        kubectl scale deployment/web-blue -n web --replicas=0 || true
+
+    - name: Output public URL
+      id: public_url
+      run: |
+        # Wait for ELB to get a hostname
+        for i in {1..30}; do
+          ELB=$(kubectl get svc -n web web-svc -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+          if [ -n "$ELB" ]; then
+            echo "PUBLIC_URL=http://$ELB" >> $GITHUB_OUTPUT
+            echo "Public URL: http://$ELB"
+            exit 0
+          fi
+          echo "Waiting for LoadBalancer... ($i/30)"
+          sleep 10
+        done
+        echo "ELB did not become ready in time"; exit 1
+
+    - name: Smoke test (HTTP 200)
+      run: |
+        URL="${{ steps.public_url.outputs.PUBLIC_URL }}"
+        echo "Testing $URL"
+        for i in {1..10}; do
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          echo "Attempt $i: HTTP $code"
+          [ "$code" = "200" ] && exit 0
+          sleep 5
+        done
+        echo "Smoke test failed"; exit 1

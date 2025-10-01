@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: web
+spec:
+  type: LoadBalancer
+  selector:
+    app: web
+    color: blue     # default live pool is BLUE
+  ports:
+  - port: 80
+    targetPort: 8080
