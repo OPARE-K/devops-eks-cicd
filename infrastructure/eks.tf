@@ -30,10 +30,17 @@ resource "aws_eks_cluster" "this" {
     subnet_ids = aws_subnet.public[*].id
   }
 
+  # NEW: enable EKS Access Entries (modern RBAC)
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.eks_cluster_AmazonEKSClusterPolicy
   ]
 }
+
 
 # Nodegroup role
 data "aws_iam_policy_document" "nodes_assume" {
