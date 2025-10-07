@@ -7,7 +7,8 @@ spec:
   type: LoadBalancer
   selector:
     app: web
-    color: blue     # default live pool is BLUE
+    color: blue
   ports:
-  - port: 80
+  - name: http              # <— add this line
+    port: 80
     targetPort: 8080

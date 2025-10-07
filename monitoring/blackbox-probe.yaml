@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: blackbox-web
+  namespace: monitoring
+  labels:
+    release: mon
+spec:
+  jobLabel: blackbox
+  endpoints:
+    - interval: 30s
+      params:
+        module: [http_2xx]
+        target: ["http://a2cbd1d00828d496c87e90c76502bd70-422861863.eu-west-2.elb.amazonaws.com"]   # <- put your ELB URL here
+      path: /probe
+      port: http
+      scheme: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus-blackbox-exporter

@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: app-alerts
+  namespace: monitoring
+  labels:
+    release: mon
+spec:
+  groups:
+  - name: app.rules
+    rules:
+    - alert: WebHighErrorRate
+      expr: |
+        sum(rate(web_requests_total{code=~"5.."}[5m])) 
+        / ignoring(code) group_left
+        sum(rate(web_requests_total[5m])) > 0.05
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High 5xx rate (>5%)"
+        description: "The app is returning 5xx for >5% of requests over 10m."
+
+    - alert: WebHighLatency
+      expr: histogram_quantile(0.95, sum(rate(web_request_latency_seconds_bucket[5m])) by (le)) > 0.5
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "p95 latency > 500ms"
+        description: "95th percentile latency is above 500ms for 10 minutes."
+
+    - alert: PodCrashLooping
+      expr: rate(kube_pod_container_status_restarts_total[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Pods are restarting frequently"
+        description: "Container restarts > 0.1 per second over 5m."

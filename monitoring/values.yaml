@@ -1,0 +1,18 @@
+# Keep storage ephemeral for the lab; change to PersistentVolume later if needed.
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+
+grafana:
+  adminUser: admin
+  adminPassword: admin123   # change for anything public
+  service:
+    type: LoadBalancer       # For easy screenshots. Use ClusterIP + port-forward in real prod.
+  defaultDashboardsEnabled: true
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    retention: 120h
